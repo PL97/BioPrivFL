@@ -4,6 +4,7 @@ import torch.optim as optim
 import torch.nn as nn
 import torch
 import copy
+from torch.utils.tensorboard import SummaryWriter
 
 class BaselineModel(nn.Module):
     def __init__(self, N_var, l1_lambda=5e-5):
@@ -91,15 +92,21 @@ class FedAvgServer(Server):
 
 class FedAvgClient(Client):
     def init_model(self, N_var, l1_lambda):
+        self.epoch = 0
         self.model = BaselineModel(N_var=N_var, l1_lambda=l1_lambda)
         self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr)
+        self.writer = SummaryWriter(log_dir=f"{self.saved_dir}/tb_events/")
 
     def local_train(self):
         _shared_eval_step(self.dl['train'], self.model, self.device, self.criterion)
 
-    def local_validate(self, epoch):
-        loss, r2 = _shared_eval_step(self.dl['test'], self.model, self.device, criterion=None)
-        return loss, r2
+    def local_validate(self):
+        self.epoch += 1
+        train_results = _shared_eval_step(self.dl['test'], self.model, self.device, criterion=self.criterion)
+        test_results = _shared_eval_step(self.dl['test'], self.model, self.device, criterion=self.criterion)
+        self.writer.add_scalars('train', train_results, self.epoch)
+        self.writer.add_scalars('test', test_results, self.epoch)
+        return train_results, test_results
 
 class FedAvg:
     def __init__(self, dls, lrs, criterions, max_epochs, client_weights, aggregation_freq, device, saved_dir, amp=False, **args):
@@ -134,6 +141,8 @@ class FedAvg:
             for cname, client in self.clients.items():
                 print(f"start training {cname}")
                 client.local_train()
+                train_score, test_score = client.local_validate()
+                print(f"train: {train_score} \t test: {test_score}")
                 self.server.update_client_model_weight(cname, client.get_copy_of_model_weights())
             
             print(f"start aggregation at server")
@@ -145,4 +154,5 @@ class FedAvg:
                 for key, param in self.server.model.state_dict().items():
                     if 'num_batches_tracked' not in key:
                         client.model.state_dict()[key].data.copy_(param)
+
 

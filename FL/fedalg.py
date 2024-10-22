@@ -66,6 +66,3 @@ class Client():
     
     def local_validate(self, idx):
         pass
-    
-    def save_models(self, file_name="best.pt"):
-        torch.save(self.client_state_dict[client_idx], f"./{self.saved_dir}/site-{client_idx+1}/{file_name}")

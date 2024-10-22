@@ -43,4 +43,8 @@ def _shared_eval_step(test_dl, model, device, criterion=None):
         all_targets.extend(y.cpu().numpy())
     # Calculate R2 score
     r2 = r2_score(all_targets, all_predictions)
-    return all_loss, r2
+    results = {
+        "r2_score": r2,
+        "loss": all_loss,
+    }
+    return results
