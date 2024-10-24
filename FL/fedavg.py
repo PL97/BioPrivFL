@@ -6,62 +6,13 @@ import torch
 import copy
 from torch.utils.tensorboard import SummaryWriter
 
-class BaselineModel(nn.Module):
-    def __init__(self, N_var, l1_lambda=5e-5):
-        super(BaselineModel, self).__init__()
-
-        # Define layers
-        self.dropout1 = nn.Dropout(0.3)
-        self.fc1 = nn.Linear(N_var, 50)
-        self.sigmoid1 = nn.Sigmoid()
-
-        self.dropout2 = nn.Dropout(0.1)
-        self.fc2 = nn.Linear(50, 20)
-        self.sigmoid2 = nn.Sigmoid()
-
-        self.fc3 = nn.Linear(20, 10)
-        self.sigmoid3 = nn.Sigmoid()
-
-        self.fc4 = nn.Linear(10, 5)
-        self.sigmoid4 = nn.Sigmoid()
-
-        self.fc5 = nn.Linear(5, 1)
-        self.sigmoid5 = nn.Sigmoid()
-
-        self.l1_lambda = l1_lambda  # L1 regularization coefficient
-
-    def forward(self, x):
-        # Forward pass
-        x = self.dropout1(x)
-        x = self.fc1(x)
-        x = self.sigmoid1(x)
-
-        x = self.dropout2(x)
-        x = self.fc2(x)
-        x = self.sigmoid2(x)
-
-        x = self.fc3(x)
-        x = self.sigmoid3(x)
-
-        x = self.fc4(x)
-        x = self.sigmoid4(x)
-
-        x = self.fc5(x)
-        x = self.sigmoid5(x)
-
-        # Calculate L1 regularization term
-        l1_reg = torch.tensor(0., requires_grad=True)
-        for param in self.parameters():
-            l1_reg = l1_reg + torch.sum(torch.abs(param))
-
-        # Scale L1 regularization
-        l1_loss = self.l1_lambda * l1_reg
-
-        return x, l1_loss
-
 class FedAvgAggregator(Aggregator):
     @torch.no_grad()
     def aggregate(self):
+        '''
+        here to define the aggregation rule
+        Fedavg: we aggregate the weight using weighted sum 
+        '''
         # Sanity check: Ensure all models have the same parameter keys
         model_keys = [set(state_dict.keys()) for _, state_dict in self.clients_model_weights.items()]
         if not all(keys == set(self.dummy_model.state_dict().keys()) for keys in model_keys):
@@ -77,43 +28,83 @@ class FedAvgAggregator(Aggregator):
                     aggregated_weights += self.client_weights[cname] * state_dict[key]
                 self.dummy_model.state_dict()[key].data.copy_(aggregated_weights)
 
+
 class FedAvgServer(Server):
-    def init_model(self, N_var, l1_lambda):
-        self.model = BaselineModel(N_var=N_var, l1_lambda=l1_lambda)
-        self.agg.dummy_model = BaselineModel(N_var=N_var, l1_lambda=l1_lambda)
+    def init_model(self, model):
+        '''
+        input: model. The model shared by all clients
+        Here we initialize the server model and also dummy_model in aggregator
+        '''
+        self.model = copy.deepcopy(model)
+        self.agg.dummy_model = copy.deepcopy(model)
     
     def update_client_model_weight(self, cname, model_state_dict):
+        '''
+        input: cname (str), the clients names that need to to updates to server (send to server)
+        model_state_dict (dict), the model weights of client "cname"
+        '''
         self.agg.clients_model_weights[cname] = copy.deepcopy(model_state_dict)
     
     def aggregate(self):
-        self.agg.fetch_local_model(self.client_state_dict)
+        """
+        aggregate the model, typically following the step:
+            1) fetch all the local updates from all clients
+            2) aggregate received the udpates and aggregate the weights
+            3) server received the aggregated model from aggregator
+        """
         self.agg.aggregate()
         self.model.load_state_dict(self.agg.dummy_model.state_dict())
 
 class FedAvgClient(Client):
-    def init_model(self, N_var, l1_lambda):
+    def init_model(self, model):
+        """
+        input: model, model shared by all clients
+        initialize the client model, optimizer, and logging variables (epoch and tensorflow writer)
+        """
         self.epoch = 0
-        self.model = BaselineModel(N_var=N_var, l1_lambda=l1_lambda)
-        self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr)
+        self.model = copy.deepcopy(model)
+        # self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
         self.writer = SummaryWriter(log_dir=f"{self.saved_dir}/tb_events/")
 
-    def local_train(self):
-        _shared_eval_step(self.dl['train'], self.model, self.device, self.criterion)
+    def local_train(self, aggregation_freq):
+        for _ in range(aggregation_freq):
+            _shared_train_step(self.dl['train'], self.model, self.criterion, self.optimizer, self.device)
 
     def local_validate(self):
+        """
+        evaluate the local model by test on its training and validation data and also log the result to tensorboard
+        """
         self.epoch += 1
-        train_results = _shared_eval_step(self.dl['test'], self.model, self.device, criterion=self.criterion)
+        train_results = _shared_eval_step(self.dl['train'], self.model, self.device, criterion=self.criterion)
         test_results = _shared_eval_step(self.dl['test'], self.model, self.device, criterion=self.criterion)
         self.writer.add_scalars('train', train_results, self.epoch)
         self.writer.add_scalars('test', test_results, self.epoch)
         return train_results, test_results
 
+    def get_copy_of_model_weights(self):
+        return copy.deepcopy(self.model.state_dict())
+
 class FedAvg:
-    def __init__(self, dls, lrs, criterions, max_epochs, client_weights, aggregation_freq, device, saved_dir, amp=False, **args):
+    def __init__(self, model, dls, lrs, criterions, max_epochs, client_weights, aggregation_freq, device, saved_dir, amp=False, **args):
+        """
+        input: model
+        dls (dict): keys are the name of the clients, values are the dataloader for the corresponding client
+        lrs (dict): same as above but the value is the learning rate
+        criterion (dict): same as above but the value is the loss function
+        max_epochs (int): number of aggregation round
+        client_weights (dict): same as dls but the vlaue is the weight in [0, 1] used for aggregation
+        aggregation_freq (int): number of local updates (epoch-wise)
+        device (torch.device): cuda or cpu
+        saved_dir (str): logging path
+        amp (bool): turn on mix precision for acceraltion of local training
+        """
         self.config = args['config']
         self.max_epochs = max_epochs
         client_names = dls.keys()
         num_clients = len(dls.keys())
+        self.model = model
+        self.aggregation_freq = aggregation_freq
 
         ## setup models and training configs
         aggregator = FedAvgAggregator(client_weights, device)
@@ -132,15 +123,24 @@ class FedAvg:
         self.scaler = torch.cuda.amp.GradScaler() if amp else None
     
     def simulation(self):
-        self.server.init_model(self.config['feature_dim'], l1_lambda=self.config['l1_lambda'])
+        """
+        federated learning simulation on one device
+        basically follows the steps as:
+            1. initialize server and clients models
+            2. clients do local update (parallel)
+            3. clients send updates to server and awaiting aggregation
+            4. server aggregate the updates
+            5. server send updates to clients, and clients sync the local model
+        """
+        self.server.init_model(self.model)
         for _, c in self.clients.items():
-            c.init_model(self.config['feature_dim'], l1_lambda=self.config['l1_lambda'])
+            c.init_model(self.model)
         for _ in range(self.max_epochs):
             print(f"========== start FL iteration: {_} ==========")
             ## initialize all the models
             for cname, client in self.clients.items():
                 print(f"start training {cname}")
-                client.local_train()
+                client.local_train(self.aggregation_freq)
                 train_score, test_score = client.local_validate()
                 print(f"train: {train_score} \t test: {test_score}")
                 self.server.update_client_model_weight(cname, client.get_copy_of_model_weights())

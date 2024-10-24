@@ -20,7 +20,7 @@ class Aggregator():
         self.device = device
 
     def fetch_local_model(self, client_state_dict):
-        self.client_state_dict = client_state_dict
+        self.clients_model_weights = client_state_dict
 
     def aggregate(**args):
         pass
@@ -54,9 +54,7 @@ class Client():
         
         ## AMP
         self.scaler = torch.cuda.amp.GradScaler() if amp else None
-    
-    def get_copy_of_model_weights(self):
-        return copy.deepcopy(self.model.state_dict())
+
     
     def init_model(self, **args):
         pass

@@ -1,9 +1,8 @@
 import torch
 import torch.nn as nn
 
-
 class MLP(nn.Module):
-    def __init__(self, input_dim, hidden_dim=30, num_layers=3, output_dim=1):
+    def __init__(self, input_dim, hidden_dim=100, num_layers=10, output_dim=2):
         super().__init__()
         bias = False
         layers = [nn.Linear(input_dim, hidden_dim, bias=bias)]
@@ -11,15 +10,18 @@ class MLP(nn.Module):
             layers.append(nn.BatchNorm1d(num_features = hidden_dim))
             layers.append(nn.ReLU())
             layers.append(nn.Linear(hidden_dim, hidden_dim, bias=bias))
-        if output_dim == 1:
-            layers.append(nn.Linear(hidden_dim, output_dim, bias=bias))
-            layers.append(nn.Sigmoid())
-        else:
-            layers.append(nn.Linear(hidden_dim, output_dim, bias=bias))
+        self.features = nn.Sequential(*layers)
 
-        self.net = nn.Sequential(*layers)
+        if output_dim == 1:
+            self.fc_layers = nn.Sequential(
+                        nn.Linear(hidden_dim, output_dim, bias=bias),
+                        nn.Sigmoid())
+        else:
+            self.fc_layers = nn.Linear(hidden_dim, output_dim, bias=bias)
+
     def forward(self, X):
-        return self.net(X)
+        x = self.features(X)
+        return self.fc_layers(x)
 
 class BaselineModel(nn.Module):
     def __init__(self, N_var, l1_lambda=5e-5):

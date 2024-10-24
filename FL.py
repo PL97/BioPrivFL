@@ -13,37 +13,20 @@ from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
 from sklearn.metrics import r2_score
 import sys
+from sklearn.datasets import load_iris
+from models import MLP
+from collections import Counter
 
 sys.path.append("./")
 from FL.fedavg import FedAvg
+from FL.utils import set_seed
 
-def set_seed(seed):
-    """Set all random seeds and settings for reproducibility (deterministic behavior)."""
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = True
-    np.random.seed(seed)
-    random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
-
-def load_data(dpath, bs=512, n_clients=2):
-    # loaded_data = np.load(dpath)
-    # feature_name = loaded_data['feature_name']
-    # features = loaded_data['features'][:60000, 6:]
-    # labels = loaded_data['labels'][:60000]
-
-    loaded_data = np.load("data/debug_data.npz")
-    features, labels = loaded_data['features'], loaded_data['labels']
-    
-    # remove instance with nan labels
-    clean_idx = ~np.isnan(labels)
-    features, labels = features[clean_idx], labels[clean_idx]
-
-
-    # standardize the input features 
-    scaler = StandardScaler()
-    features = scaler.fit_transform(features)
+def create_fl_split(features, labels, n_clients, bs, shuffle=True):
+    if shuffle:
+        idx = list(range(features.shape[0]))
+        np.random.shuffle(idx)
+        features = features[idx]
+        labels = labels[idx]
 
     ## create splits for clients
     sample_per_client = features.shape[0]//n_clients
@@ -63,25 +46,58 @@ def load_data(dpath, bs=512, n_clients=2):
         train_dl = FastTensorDataLoader(train_X, train_y, batch_size=bs, shuffle=True)
         test_dl = FastTensorDataLoader(test_X, test_y, batch_size=bs, shuffle=False)
         dls = {"train": train_dl, "test": test_dl}
-        stats = {"data_size": features.shape[0], "feature_dim": features.shape[1]}
+        stats = {"data_size": tmp_features.shape[0], "feature_dim": tmp_features.shape[1], "num_labels": len(set(tmp_labels)), "label_distribution": Counter(tmp_labels)}
 
         all_dls[f'client_{i}'] = dls
         all_stats[f'client_{i}'] = stats
     return all_dls, all_stats
 
+
+def load_rps_data(bs=512, n_clients=2):
+    # loaded_data = np.load(dpath)
+    # feature_name = loaded_data['feature_name']
+    # features = loaded_data['features'][:60000, 6:]
+    # labels = loaded_data['labels'][:60000]
+
+    loaded_data = np.load("data/debug_data.npz")
+    features, labels = loaded_data['features'], loaded_data['labels']
+    
+    # remove instance with nan labels
+    clean_idx = ~np.isnan(labels)
+    features, labels = features[clean_idx], labels[clean_idx]
+
+
+    # standardize the input features 
+    scaler = StandardScaler()
+    features = scaler.fit_transform(features)
+    all_dls, all_stats = create_fl_split(features, labels, n_clients, bs)
+
+    return all_dls, all_stats
+
+def load_uci_data(bs=512, n_clients=2):
+    iris_data = load_iris()
+    features, labels = iris_data.data, iris_data.target
+    scaler = StandardScaler()
+    features = scaler.fit_transform(features)
+    all_dls, all_stats = create_fl_split(features, labels, n_clients, bs)
+    return all_dls, all_stats
+
+
 def main():
-    seed = 0
+    seed = 1
     set_seed(seed)
 
     #global LOG_FILE_NAME
-    log_dir = f"./logs/FL/{seed}/"
-    os.makedirs(log_dir, exist_ok=True)
     n_clients = 2
+    log_dir = f"./logs/FL/iris_{n_clients}/{seed}/"
+    os.makedirs(log_dir, exist_ok=True)
    
-    dls, stats = load_data(dpath='data/data.npz')
+    # dls, stats = load_data(dpath='data/data.npz')
+    dls, stats = load_uci_data(n_clients=n_clients, bs=128)
     
     # Training setups
-    criterions = {f"client_{i}": nn.MSELoss(reduction='mean') for i in range(n_clients)}
+    # criterions = {f"client_{i}": nn.MSELoss(reduction='mean') for i in range(n_clients)}
+    criterions = {f"client_{i}": nn.CrossEntropyLoss() for i in range(n_clients)}
     client_weights = {f"client_{i}": 1/n_clients for i in range(n_clients)}
 
     # criterion = nn.L1Loss()
@@ -89,13 +105,14 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     lrs ={f"client_{i}": 1e-3 for i in range(n_clients)}
-    max_epochs = 10
-    aggregation_freq=1
-    l1_lambda = 1e-3
+    max_epochs = 50
+    aggregation_freq = 1
 
-    config = {'feature_dim': stats['client_1']['feature_dim'], 'l1_lambda': l1_lambda}
+    config = {'feature_dim': stats['client_0']['feature_dim'], 'num_labels': stats['client_0']['num_labels']}
 
-    fedavg = FedAvg(dls, lrs, criterions, max_epochs, client_weights, aggregation_freq, device, saved_dir="log/FL/", config=config)
+    model = MLP(config['feature_dim'], hidden_dim=5, num_layers=5, output_dim=config['num_labels'])
+
+    fedavg = FedAvg(model, dls, lrs, criterions, max_epochs, client_weights, aggregation_freq, device, saved_dir="log/FL/", config=config)
     
     fedavg.simulation()
 
