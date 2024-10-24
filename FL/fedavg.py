@@ -78,8 +78,9 @@ class FedAvgClient(Client):
         self.epoch += 1
         train_results = _shared_eval_step(self.dl['train'], self.model, self.device, criterion=self.criterion)
         test_results = _shared_eval_step(self.dl['test'], self.model, self.device, criterion=self.criterion)
-        self.writer.add_scalars('train', train_results, self.epoch)
-        self.writer.add_scalars('test', test_results, self.epoch)
+        for k in train_results:
+            self.writer.add_scalar(f'train_{k}', train_results[k], self.epoch)
+            self.writer.add_scalar(f'test_{k}', test_results[k], self.epoch)
         return train_results, test_results
 
     def get_copy_of_model_weights(self):

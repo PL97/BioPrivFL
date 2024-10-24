@@ -88,20 +88,17 @@ def main():
     set_seed(seed)
 
     #global LOG_FILE_NAME
-    n_clients = 2
-    log_dir = f"./logs/FL/iris_{n_clients}/{seed}/"
+    n_clients = 10
+    log_dir = f"./logs/non-FL/iris_{n_clients}/{seed}/"
     os.makedirs(log_dir, exist_ok=True)
    
     # dls, stats = load_data(dpath='data/data.npz')
     dls, stats = load_uci_data(n_clients=n_clients, bs=128)
     
     # Training setups
-    # criterions = {f"client_{i}": nn.MSELoss(reduction='mean') for i in range(n_clients)}
     criterions = {f"client_{i}": nn.CrossEntropyLoss() for i in range(n_clients)}
-    client_weights = {f"client_{i}": 1/n_clients for i in range(n_clients)}
+    client_weights = {f"client_{i}": 1.0/n_clients for i in range(n_clients)}
 
-    # criterion = nn.L1Loss()
-    # optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     lrs ={f"client_{i}": 1e-3 for i in range(n_clients)}
@@ -110,9 +107,9 @@ def main():
 
     config = {'feature_dim': stats['client_0']['feature_dim'], 'num_labels': stats['client_0']['num_labels']}
 
-    model = MLP(config['feature_dim'], hidden_dim=5, num_layers=5, output_dim=config['num_labels'])
+    model = MLP(config['feature_dim'], hidden_dim=100, num_layers=10, output_dim=config['num_labels'])
 
-    fedavg = FedAvg(model, dls, lrs, criterions, max_epochs, client_weights, aggregation_freq, device, saved_dir="log/FL/", config=config)
+    fedavg = FedAvg(model, dls, lrs, criterions, max_epochs, client_weights, aggregation_freq, device, saved_dir=log_dir, config=config)
     
     fedavg.simulation()
 

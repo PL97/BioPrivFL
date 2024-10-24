@@ -12,6 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 from collections import defaultdict
 import gc
 import torch
+from paillier_lib.paillierPHE import * 
 
 class Aggregator():
     def __init__(self, client_weights, device):
