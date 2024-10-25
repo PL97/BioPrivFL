@@ -16,11 +16,20 @@ import sys
 from sklearn.datasets import load_iris
 from model_hubs.MLP import MLP
 from collections import Counter
+import argparse
 
 sys.path.append("./")
 from SecFL.fedavg import FedAvg
 from SecFL.fedavg_phe import FedAvgWithPHE
 from SecFL.utils import set_seed
+
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--phe", action='store_true', help="enable phe")
+    args = parser.parse_args()
+    return args
 
 def create_fl_split(features, labels, n_clients, bs, shuffle=True):
     if shuffle:
@@ -87,6 +96,8 @@ def load_uci_data(bs=512, n_clients=2):
 def main():
     seed = 1
     set_seed(seed)
+    args = parse_args()
+
 
     #global LOG_FILE_NAME
     n_clients = 5
@@ -110,7 +121,10 @@ def main():
 
     model = MLP(config['feature_dim'], hidden_dim=100, num_layers=10, output_dim=config['num_labels'])
 
-    fedavg = FedAvg(model, dls, lrs, criterions, max_epochs, client_weights, aggregation_freq, device, saved_dir=log_dir, config=config)
+    if args.phe:
+        fedavg = FedAvgWithPHE(model, dls, lrs, criterions, max_epochs, client_weights, aggregation_freq, device, saved_dir=log_dir, config=config)
+    else:
+        fedavg = FedAvg(model, dls, lrs, criterions, max_epochs, client_weights, aggregation_freq, device, saved_dir=log_dir, config=config)
     
     fedavg.simulation()
 
