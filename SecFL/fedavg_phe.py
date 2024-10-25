@@ -1,5 +1,5 @@
-from FL.fedavg import FedAvgAggregator, FedAvgClient, FedAvgServer
-from FL.phe_utils import ArrayEncrypt, DigitEncrypt
+from SecFL.fedavg import FedAvgAggregator, FedAvgClient, FedAvgServer
+from SecFL.phe_utils import ArrayEncrypt, DigitEncrypt
 import torch
 import copy
 import phe.paillier as paillier

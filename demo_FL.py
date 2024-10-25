@@ -4,7 +4,7 @@
 import numpy as np
 import torch
 import torch.optim as optim
-from models import BaselineModel
+from model_hubs.MLP import BaselineModel
 from datasets import FastTensorDataLoader
 import os
 import random
@@ -14,13 +14,13 @@ from tqdm import tqdm
 from sklearn.metrics import r2_score
 import sys
 from sklearn.datasets import load_iris
-from models import MLP
+from model_hubs.MLP import MLP
 from collections import Counter
 
 sys.path.append("./")
-from FL.fedavg import FedAvg
-from FL.fedavg_phe import FedAvgWithPHE
-from FL.utils import set_seed
+from SecFL.fedavg import FedAvg
+from SecFL.fedavg_phe import FedAvgWithPHE
+from SecFL.utils import set_seed
 
 def create_fl_split(features, labels, n_clients, bs, shuffle=True):
     if shuffle:

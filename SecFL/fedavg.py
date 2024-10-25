@@ -1,5 +1,5 @@
-from FL.fedalg import Server, Client, Aggregator
-from FL.utils import _shared_eval_step, _shared_train_step
+from SecFL.fedalg import Server, Client, Aggregator
+from SecFL.utils import _shared_eval_step, _shared_train_step
 import torch.optim as optim
 import torch.nn as nn
 import torch
