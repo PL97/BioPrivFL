@@ -19,6 +19,7 @@ from collections import Counter
 
 sys.path.append("./")
 from FL.fedavg import FedAvg
+from FL.fedavg_phe import FedAvgWithPHE
 from FL.utils import set_seed
 
 def create_fl_split(features, labels, n_clients, bs, shuffle=True):
@@ -88,8 +89,8 @@ def main():
     set_seed(seed)
 
     #global LOG_FILE_NAME
-    n_clients = 10
-    log_dir = f"./logs/non-FL/iris_{n_clients}/{seed}/"
+    n_clients = 5
+    log_dir = f"./logs/FL_PHE/iris_{n_clients}/{seed}/"
     os.makedirs(log_dir, exist_ok=True)
    
     # dls, stats = load_data(dpath='data/data.npz')

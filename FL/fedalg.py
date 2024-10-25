@@ -12,12 +12,12 @@ from torch.utils.tensorboard import SummaryWriter
 from collections import defaultdict
 import gc
 import torch
-from paillier_lib.paillierPHE import * 
 
 class Aggregator():
     def __init__(self, client_weights, device):
         self.client_weights = client_weights
         self.clients_model_weights = {}
+        self.agg_weights = {}
         self.device = device
 
     def fetch_local_model(self, client_state_dict):

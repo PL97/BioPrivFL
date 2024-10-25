@@ -26,7 +26,7 @@ class FedAvgAggregator(Aggregator):
                 # temp = torch.zeros_like(server_model.state_dict()[key], dtype=type(server_model.state_dict()[key]))
                 for cname, state_dict in self.clients_model_weights.items():
                     aggregated_weights += self.client_weights[cname] * state_dict[key]
-                self.dummy_model.state_dict()[key].data.copy_(aggregated_weights)
+                self.agg_weights[key] = aggregated_weights
 
 
 class FedAvgServer(Server):
@@ -53,7 +53,9 @@ class FedAvgServer(Server):
             3) server received the aggregated model from aggregator
         """
         self.agg.aggregate()
-        self.model.load_state_dict(self.agg.dummy_model.state_dict())
+    
+    def get_agg_weights(self):
+        return self.agg.agg_weights
 
 class FedAvgClient(Client):
     def init_model(self, model):
@@ -85,6 +87,11 @@ class FedAvgClient(Client):
 
     def get_copy_of_model_weights(self):
         return copy.deepcopy(self.model.state_dict())
+    
+    def update_local_model(self, state_dict):
+        for key, param in state_dict.items():
+            if 'num_batches_tracked' not in key:
+                self.model.state_dict()[key].data.copy_(param)
 
 class FedAvg:
     def __init__(self, model, dls, lrs, criterions, max_epochs, client_weights, aggregation_freq, device, saved_dir, amp=False, **args):
@@ -151,9 +158,6 @@ class FedAvg:
             
             ## send udpates back to clients
             for cname, client in self.clients.items():
-                # self.client_state_dict[client_idx][key].data.copy_(server_model.state_dict()[key])
-                for key, param in self.server.model.state_dict().items():
-                    if 'num_batches_tracked' not in key:
-                        client.model.state_dict()[key].data.copy_(param)
+                client.update_local_model(self.server.get_agg_weights())
 
 
