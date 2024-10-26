@@ -1,4 +1,4 @@
-## FedNLP
+## BioPrivFL
 
 An open-source federated learning framework for FULLY privacy-preserving biomedical data analysis
 
